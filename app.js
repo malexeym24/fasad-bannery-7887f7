@@ -1,7 +1,7 @@
 /* Конструктор фасада: слои-картинки поверх фото. Состояние хранится в адресе (#k=...), ссылкой можно делиться. */
 (function () {
   var D = window.DATA, $ = function (s) { return document.querySelector(s); };
-  var KEYS = ['photo', 'roof', 'design', 'layout', 'gable', 'tside', 'tfront', 'sl', 'sm', 'sr'];
+  var KEYS = ['photo', 'roof', 'design', 'layout', 'gable', 'tside', 'tfront', 'sl', 'sm', 'sr', 'fresh'];   /* новые ключи только в конец: старые ссылки остаются рабочими */
   var ALL = D.groups.concat(D.mix);
   var state = {};
   KEYS.forEach(function (k) { state[k] = D.defaults[k]; });
@@ -14,8 +14,10 @@
   function compute(st) {
     var out = [];
     if (st.roof !== 'asis') out.push('roof_' + st.roof);
-    if (st.tfront !== 'none') out.push('tfront_' + st.tfront);
-    if (st.tside !== 'asis') out.push('tside_' + st.tside);
+    if (st.fresh === 'yes') out.push('fresh_' + st.roof);
+    var sfx = (D.extra_style && D.extra_style[st.design]) || '';       /* вывеска и баннер башни в стиле выбранного готового макета */
+    if (st.tfront !== 'none') out.push('tfront_' + st.tfront + sfx);
+    if (st.tside !== 'asis') out.push('tside_' + st.tside + (st.tside === 'plitka' ? sfx : ''));
     [['sl', 'left', null], ['sm', 'mid', 'mid_p'], ['sr', 'right', 'right_g']].forEach(function (p) {
       var did = st[p[0]] === 'same' ? st.design : st[p[0]];
       var slots = D.designs[did].slots;
@@ -29,7 +31,7 @@
   window.__compute = compute;
 
   // ---- tabs
-  var TABS = ['versions', 'builder', 'flat'];
+  var TABS = ['versions', 'old', 'builder', 'flat'];
   function tab(t) {
     document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     TABS.forEach(function (x) { $('#' + x).hidden = x !== t; });
@@ -60,15 +62,17 @@
   }
   D.variants.forEach(function (v) { if (v.sec !== 'old') grid.appendChild(vcard(v)); });
   grid.appendChild(card('img/now_s.jpg', 'img/now.jpg', 'Как сейчас', 'Фото 19.12.2024 без изменений, для сравнения.', null));
-  var olds = D.variants.filter(function (v) { return v.sec === 'old'; });
-  if (olds.length || (D.sheets || []).length) {
-    var vs = $('#versions');
-    var oh = document.createElement('h2'); oh.textContent = 'Готовые макеты 2025 года'; vs.appendChild(oh);
-    var on = document.createElement('p'); on.className = 'note'; on.textContent = 'Те макеты, что были сделаны в 2025 году, без правок. ' + (D.old_note || '').replace(' в нём', ' в них'); vs.appendChild(on);
-    var og = document.createElement('div'); og.className = 'grid'; og.id = 'grid_old'; og.style.marginTop = '10px'; vs.appendChild(og);
-    olds.forEach(function (v) { og.appendChild(vcard(v)); });
-    (D.sheets || []).forEach(function (h) { og.appendChild(card(h.img, h.full, h.title, h.desc, null)); });
-  }
+
+  // ---- макеты 2025 года: готовые баннеры на нашем фото и листы всех подач
+  var oldbox = $('#oldbox'), byVid = {};
+  D.variants.forEach(function (v) { byVid[v.id] = v; });
+  (D.old || []).forEach(function (sec) {
+    var h = document.createElement('h2'); h.textContent = sec.title; oldbox.appendChild(h);
+    if (sec.note) { var n = document.createElement('p'); n.className = 'note'; n.textContent = sec.note; oldbox.appendChild(n); }
+    var g = document.createElement('div'); g.className = 'grid'; g.style.marginTop = '10px'; oldbox.appendChild(g);
+    (sec.vids || []).forEach(function (id) { g.appendChild(vcard(byVid[id])); });
+    sec.sheets.forEach(function (sh) { g.appendChild(card(sh.img, sh.full, sh.title, sh.desc, null)); });
+  });
 
   // ---- баннеры отдельно
   var flatbox = $('#flatbox');
@@ -188,13 +192,27 @@
   stage.onclick = big;
 
   $('#upd').textContent = D.updated;
+  var u2 = $('#upd2'); if (u2) u2.textContent = 'обновлено ' + D.updated;
+  var sb = $('#sites');
+  if (sb) (D.sites || []).forEach(function (x) { var a = document.createElement('a'); a.href = x.url; a.textContent = 'сайт ' + x.name; a.className = 'other'; sb.appendChild(a); });
+
+  // ---- вкладка открыта давно, а сайт обновился: показать полосу «есть новая версия»
+  function checkVersion() {
+    if (typeof fetch !== 'function') return;
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+      var bar = $('#newver'); if (bar && j && j.v && j.v !== D.version) { bar.hidden = false; }
+    }).catch(function () {});
+  }
+  var nb = $('#newverbtn'); if (nb) nb.onclick = function () { location.reload(); };
+  if (typeof setInterval === 'function') { setInterval(checkVersion, 60000); checkVersion(); }
+  if (document.addEventListener) document.addEventListener('visibilitychange', function () { if (!document.hidden) checkVersion(); });
 
   // ---- старт по адресу
   var h = decodeURIComponent(location.hash.slice(1));
   var t0 = h.split('=')[0];
   if (t0 === 'builder') {
     var p = (h.split('=')[1] || '').split('.');
-    if (p.length === KEYS.length) KEYS.forEach(function (k, i) { if (ok(k, p[i])) state[k] = p[i]; });
+    if (p.length >= 7) KEYS.forEach(function (k, i) { if (i < p.length && ok(k, p[i])) state[k] = p[i]; });
   }
   render();
   tab(TABS.indexOf(t0) >= 0 ? t0 : 'versions');

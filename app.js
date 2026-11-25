@@ -32,9 +32,11 @@
 
   // ---- tabs
   var TABS = ['versions', 'old', 'builder', 'flat'];
+  function small() { return Math.min(window.innerWidth || 1200, (window.screen && window.screen.width) || 1200) < 700; }   /* телефон */
   function tab(t) {
     document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
     TABS.forEach(function (x) { $('#' + x).hidden = x !== t; });
+    if (t === 'builder') render();          /* сцена конструктора грузится только когда его открыли */
     writeHash();
   }
   function curTab() { return TABS.filter(function (x) { return !$('#' + x).hidden; })[0] || 'versions'; }
@@ -42,9 +44,12 @@
 
   // ---- варианты
   var grid = $('#grid');
-  function card(img, full, title, desc, onbuild) {
+  function card(img, full, title, desc, onbuild, o) {
     var fig = document.createElement('figure');
-    var im = document.createElement('img'); im.loading = 'lazy'; im.src = img; im.setAttribute('data-full', full); im.alt = title;
+    var im = document.createElement('img'); im.loading = 'lazy'; im.decoding = 'async';
+    if (o && o.w) { im.width = o.w; im.height = o.h; }             /* место под картинку держится до загрузки: страница не прыгает */
+    if (o && o.mid) im.setAttribute('data-mid', o.mid);            /* средний размер для телефона */
+    im.src = img; im.setAttribute('data-full', full); im.alt = title;
     var cap = document.createElement('figcaption'); var b = document.createElement('b'); b.textContent = title; var s = document.createElement('span'); s.textContent = desc;
     cap.appendChild(b); cap.appendChild(s); fig.appendChild(im); fig.appendChild(cap);
     if (onbuild) {
@@ -56,12 +61,12 @@
   /* Новые варианты и «как сейчас» - в первой сетке; готовые макеты 2025 года - отдельным блоком ниже.
      Номер закреплён за вариантом (v.num): снятый номер не переиспользуется. */
   function vcard(v) {
-    var fig = card('img/' + v.id + '_s.jpg', 'img/' + v.id + '.jpg', (v.num ? v.num + '. ' : '') + v.title, v.desc, function () { load(v.state); tab('builder'); window.scrollTo(0, 0); });
+    var fig = card('img/' + v.id + '_s.jpg', 'img/' + v.id + '.jpg', (v.num ? v.num + '. ' : '') + v.title, v.desc, function () { load(v.state); tab('builder'); window.scrollTo(0, 0); }, { mid: 'img/' + v.id + '_m.jpg', w: 1280, h: 380 });
     fig.setAttribute('data-vid', v.id);
     return fig;
   }
   D.variants.forEach(function (v) { if (v.sec !== 'old') grid.appendChild(vcard(v)); });
-  grid.appendChild(card('img/now_s.jpg', 'img/now.jpg', 'Как сейчас', 'Фото 19.12.2024 без изменений, для сравнения.', null));
+  grid.appendChild(card('img/now_s.jpg', 'img/now.jpg', 'Как сейчас', 'Фото 19.12.2024 без изменений, для сравнения.', null, { mid: 'img/now_m.jpg', w: 1280, h: 380 }));
 
   // ---- макеты 2025 года: готовые баннеры на нашем фото и листы всех подач
   var oldbox = $('#oldbox'), byVid = {};
@@ -71,7 +76,7 @@
     if (sec.note) { var n = document.createElement('p'); n.className = 'note'; n.textContent = sec.note; oldbox.appendChild(n); }
     var g = document.createElement('div'); g.className = 'grid'; g.style.marginTop = '10px'; oldbox.appendChild(g);
     (sec.vids || []).forEach(function (id) { g.appendChild(vcard(byVid[id])); });
-    sec.sheets.forEach(function (sh) { g.appendChild(card(sh.img, sh.full, sh.title, sh.desc, null)); });
+    sec.sheets.forEach(function (sh) { g.appendChild(card(sh.img, sh.full, sh.title, sh.desc, null, { w: sh.w, h: sh.h })); });
   });
 
   // ---- баннеры отдельно
@@ -81,7 +86,9 @@
     var p = document.createElement('p'); p.className = 'note'; p.textContent = D.designs[did].desc; flatbox.appendChild(p);
     var g = document.createElement('div'); g.className = 'grid flat';
     D.flat[did].forEach(function (f) {
-      var fig = document.createElement('figure'); var im = document.createElement('img'); im.loading = 'lazy'; im.src = f.src; im.alt = f.label;
+      var fig = document.createElement('figure'); var im = document.createElement('img'); im.loading = 'lazy'; im.decoding = 'async';
+      if (f.w) { im.width = f.w; im.height = f.h; }
+      im.src = f.src; im.alt = D.designs[did].label + ' \u00B7 ' + f.label;
       var cap = document.createElement('figcaption'); var s = document.createElement('span'); s.textContent = D.designs[did].label + ' · ' + f.label; cap.appendChild(s);
       fig.appendChild(im); fig.appendChild(cap); g.appendChild(fig);
     });
@@ -90,7 +97,9 @@
 
   // ---- сцена
   var stage = $('#stage'), pool = [];
-  var bg = document.createElement('img'); bg.className = 'bgimg'; bg.alt = ''; bg.src = D.base; stage.appendChild(bg);
+  var bg = document.createElement('img'); bg.className = 'bgimg'; bg.alt = ''; stage.appendChild(bg);
+  var zoomLevel = 1;
+  function baseSrc() { return (small() && zoomLevel === 1 && D.base_m) ? D.base_m : D.base; }   /* на телефоне фон вдвое легче, пока сцена не увеличена */
   function place(im, id) {
     var L = D.layers[id];
     if (im.getAttribute('data-id') !== id) { im.src = L.src; im.setAttribute('data-id', id); }
@@ -131,8 +140,11 @@
   }
   function render() {
     var ids = compute(state);
-    while (pool.length < ids.length) { var im = document.createElement('img'); im.alt = ''; stage.appendChild(im); pool.push(im); }
-    pool.forEach(function (im, i) { if (i < ids.length) place(im, ids[i]); else im.hidden = true; });
+    if (curTab() === 'builder') {          /* пока конструктор закрыт, его картинки не грузятся */
+      var bs = baseSrc(); if (bg.getAttribute('data-src') !== bs) { bg.src = bs; bg.setAttribute('data-src', bs); }
+      while (pool.length < ids.length) { var im = document.createElement('img'); im.alt = ''; im.decoding = 'async'; stage.appendChild(im); pool.push(im); }
+      pool.forEach(function (im, i) { if (i < ids.length) place(im, ids[i]); else im.hidden = true; });
+    }
     var alt = hasAlt();
     Object.keys(buttons).forEach(function (k) {
       buttons[k].forEach(function (p) {
@@ -168,7 +180,7 @@
   // ---- размер сцены: вписать, x2, x3 (на телефоне листается вбок)
   document.querySelectorAll('[data-zoom]').forEach(function (b) {
     b.onclick = function () {
-      var z = +b.dataset.zoom; stage.style.width = (z * 100) + '%';
+      var z = +b.dataset.zoom; stage.style.width = (z * 100) + '%'; zoomLevel = z; render();
       document.querySelectorAll('[data-zoom]').forEach(function (x) { x.classList.toggle('on', x === b); });
       var sc = $('#scroll'); sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2;
     };
@@ -178,15 +190,17 @@
   function loadImg(src) { return new Promise(function (res, rej) { var i = new Image(); i.onload = function () { res(i); }; i.onerror = rej; i.src = src; }); }
   function big() {
     var ids = compute(state), srcs = [D.base].concat(ids.map(function (id) { return D.layers[id].src; }));
-    var btn = $('#bigbtn'); btn.disabled = true;
+    var btn = $('#bigbtn'), back = 'Открыть крупно'; btn.disabled = true; btn.textContent = 'Собираю картинку\u2026';
+    var done = function () { btn.disabled = false; btn.textContent = back; };
     Promise.all(srcs.map(loadImg)).then(function (ims) {
-      var c = document.createElement('canvas'); c.width = D.W; c.height = D.H; var x = c.getContext('2d');
-      x.drawImage(ims[0], 0, 0, D.W, D.H);
-      ids.forEach(function (id, i) { var L = D.layers[id]; x.drawImage(ims[i + 1], L.x, L.y, L.w, L.h); });
-      var im = $('#bigimg'); im.src = c.toDataURL('image/jpeg', 0.9); $('#bigcap').textContent = 'Конструктор: ' + label('design', state.design);
-      btn.disabled = false;
-      im.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    }, function () { btn.disabled = false; });
+      var k = small() ? 2560 / D.W : 1;                      /* на телефоне картинка поменьше: быстрее и без нехватки памяти */
+      var c = document.createElement('canvas'); c.width = Math.round(D.W * k); c.height = Math.round(D.H * k); var x = c.getContext('2d');
+      x.drawImage(ims[0], 0, 0, c.width, c.height);
+      ids.forEach(function (id, i) { var L = D.layers[id]; x.drawImage(ims[i + 1], L.x * k, L.y * k, L.w * k, L.h * k); });
+      var url = c.toDataURL('image/jpeg', 0.88);
+      done();
+      if (window.__viewer) window.__viewer.open([{ thumb: url, full: url, mid: '', title: 'Конструктор: ' + label('design', state.design), r: D.W / D.H }], 0);
+    }, done);
   }
   $('#bigbtn').onclick = big;
   stage.onclick = big;

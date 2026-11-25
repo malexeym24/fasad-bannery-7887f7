@@ -22,8 +22,7 @@
       var slot = (st.layout === 'c' && p[2] && slots[p[2]]) ? p[2] : p[1];
       out.push(slots[slot]);
     });
-    if (st.gable === 'signs' || st.gable === 'both') out.push('sign_l', 'sign_r');
-    if (st.gable === 'plates' || st.gable === 'both') out.push('plate_l', 'plate_r');
+    if (st.gable === 'signs') out.push('sign_l', 'sign_r');
     if (st.photo === 'orig') out.push('obj_pallet', 'obj_stand_l', 'obj_stand_r');
     return out;
   }
@@ -52,10 +51,24 @@
     }
     return fig;
   }
-  D.variants.forEach(function (v, i) {
-    grid.appendChild(card('img/' + v.id + '_s.jpg', 'img/' + v.id + '.jpg', (i + 1) + '. ' + v.title, v.desc, function () { load(v.state); tab('builder'); window.scrollTo(0, 0); }));
-  });
+  /* Новые варианты и «как сейчас» - в первой сетке; готовые макеты 2025 года - отдельным блоком ниже.
+     Номер закреплён за вариантом (v.num): снятый номер не переиспользуется. */
+  function vcard(v) {
+    var fig = card('img/' + v.id + '_s.jpg', 'img/' + v.id + '.jpg', (v.num ? v.num + '. ' : '') + v.title, v.desc, function () { load(v.state); tab('builder'); window.scrollTo(0, 0); });
+    fig.setAttribute('data-vid', v.id);
+    return fig;
+  }
+  D.variants.forEach(function (v) { if (v.sec !== 'old') grid.appendChild(vcard(v)); });
   grid.appendChild(card('img/now_s.jpg', 'img/now.jpg', 'Как сейчас', 'Фото 19.12.2024 без изменений, для сравнения.', null));
+  var olds = D.variants.filter(function (v) { return v.sec === 'old'; });
+  if (olds.length || (D.sheets || []).length) {
+    var vs = $('#versions');
+    var oh = document.createElement('h2'); oh.textContent = 'Готовые макеты 2025 года'; vs.appendChild(oh);
+    var on = document.createElement('p'); on.className = 'note'; on.textContent = 'Те макеты, что были сделаны в 2025 году, без правок. ' + (D.old_note || '').replace(' в нём', ' в них'); vs.appendChild(on);
+    var og = document.createElement('div'); og.className = 'grid'; og.id = 'grid_old'; og.style.marginTop = '10px'; vs.appendChild(og);
+    olds.forEach(function (v) { og.appendChild(vcard(v)); });
+    (D.sheets || []).forEach(function (h) { og.appendChild(card(h.img, h.full, h.title, h.desc, null)); });
+  }
 
   // ---- баннеры отдельно
   var flatbox = $('#flatbox');
